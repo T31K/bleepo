@@ -140,12 +140,20 @@ export default function VoiceCall() {
         setCallActive(true);
 
         // ✅ Connect to WebSocket
-        const newSocket = io(`${process.env.NEXT_PUBLIC_API_BASE}/stream`);
-        setSocket(newSocket);
+        const socketUrl = `${process.env.NEXT_PUBLIC_API_BASE}/stream`;
+        console.log(`Attempting to connect to WebSocket at: ${socketUrl}`);
+        const newSocket = io(socketUrl);
 
-        // Set up event listeners for the socket
         newSocket.on("connect", () => {
           console.log("✅ Connected to stream socket");
+        });
+
+        newSocket.on("connect_error", (error) => {
+          console.error("❌ WebSocket connection error:", error);
+        });
+
+        newSocket.on("connect_timeout", () => {
+          console.error("⏱️ WebSocket connection timeout");
         });
 
         newSocket.on("audio", (audioData) => {
