@@ -313,12 +313,9 @@ export default function VoiceCall() {
                       { code: "+975", label: "BT" }, // Bhutan
                       { code: "+673", label: "BN" }, // Brunei
                       { code: "+855", label: "KH" }, // Cambodia
-                      { code: "+86", label: "CN" }, // China
-                      { code: "+91", label: "IN" }, // India
                       { code: "+62", label: "ID" }, // Indonesia
                       { code: "+98", label: "IR" }, // Iran
                       { code: "+964", label: "IQ" }, // Iraq
-                      { code: "+81", label: "JP" }, // Japan
                       { code: "+962", label: "JO" }, // Jordan
                       { code: "+7", label: "KZ" }, // Kazakhstan
                       { code: "+965", label: "KW" }, // Kuwait
