@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { useAuth } from "@/context/AuthProvider";
@@ -39,7 +38,13 @@ export default function VoiceCall() {
   const [callDuration, setCallDuration] = useState(0);
   const [callSid, setCallSid] = useState(null);
   const [socket, setSocket] = useState(null);
-  const audioRef = useRef(null); // ✅ Initialize with useRef()
+
+  const audioRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const mediaStreamSourceRef = useRef(null);
+  const processorRef = useRef(null);
+  const micStreamRef = useRef(null);
+
   const { user, token } = useAuth();
 
   useEffect(() => {
@@ -51,17 +56,34 @@ export default function VoiceCall() {
     } else {
       setCallDuration(0);
     }
-
     return () => {
       if (interval) clearInterval(interval);
     };
   }, [callActive]);
 
+  // Initialize audio element
   useEffect(() => {
-    if (!audioRef.current) {
-      audioRef.current = new Audio(); // ✅ Initialize only once
-      audioRef.current.autoplay = true;
-    }
+    audioRef.current = new Audio();
+    audioRef.current.autoplay = true;
+
+    return () => {
+      // Cleanup audio processing
+      if (processorRef.current && mediaStreamSourceRef.current) {
+        processorRef.current.disconnect();
+        mediaStreamSourceRef.current.disconnect();
+      }
+
+      if (
+        audioContextRef.current &&
+        audioContextRef.current.state !== "closed"
+      ) {
+        audioContextRef.current.close();
+      }
+
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
   }, []);
 
   const formatTime = (seconds) => {
@@ -84,18 +106,22 @@ export default function VoiceCall() {
 
   const handleCall = async () => {
     if (phoneNumber.length === 0) return;
-
     try {
       if (!user || !token) {
         alert("You must be logged in to make a call.");
         return;
       }
-
       if (user.call_credits < 60) {
         alert("Not enough credits to start a call. Please top up.");
         return;
       }
 
+      // ✅ Request Microphone Permission Before Calling
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micStreamRef.current = stream;
+      console.log("🎤 Microphone access granted");
+
+      // ✅ Start Twilio call
       const callRes = await axios.post(
         `${process.env.NEXT_PUBLIC_API_BASE}/phone/call`,
         {
@@ -113,17 +139,53 @@ export default function VoiceCall() {
         setCallSid(callRes.data.callSid);
         setCallActive(true);
 
-        const newSocket = io(process.env.NEXT_PUBLIC_API_BASE);
+        // ✅ Connect to WebSocket
+        const newSocket = io(`${process.env.NEXT_PUBLIC_API_BASE}/stream`);
+        setSocket(newSocket);
+
+        // Set up event listeners for the socket
+        newSocket.on("connect", () => {
+          console.log("✅ Connected to stream socket");
+        });
+
         newSocket.on("audio", (audioData) => {
+          // Convert incoming audio data to an audio buffer
+          const audioBlob = new Blob([new Float32Array(audioData).buffer], {
+            type: "audio/wav",
+          });
+          const audioUrl = URL.createObjectURL(audioBlob);
+
           if (audioRef.current) {
-            const audioBlob = new Blob([audioData], { type: "audio/wav" });
-            const audioUrl = URL.createObjectURL(audioBlob);
             audioRef.current.src = audioUrl;
-            audioRef.current.play();
+            audioRef.current
+              .play()
+              .catch((e) => console.error("Audio play error:", e));
           }
         });
 
-        setSocket(newSocket);
+        // ✅ Set up Web Audio API for streaming
+        audioContextRef.current = new (window.AudioContext ||
+          window.webkitAudioContext)();
+        mediaStreamSourceRef.current =
+          audioContextRef.current.createMediaStreamSource(stream);
+
+        // Create a script processor node for real-time audio processing
+        processorRef.current = audioContextRef.current.createScriptProcessor(
+          2048,
+          1,
+          1
+        );
+        processorRef.current.onaudioprocess = (event) => {
+          if (!muted && callActive) {
+            const inputData = event.inputBuffer.getChannelData(0);
+            // Create a copy of the data to send
+            const dataToSend = new Float32Array(inputData);
+            newSocket.emit("audio-stream", Array.from(dataToSend));
+          }
+        };
+
+        mediaStreamSourceRef.current.connect(processorRef.current);
+        processorRef.current.connect(audioContextRef.current.destination);
       } else {
         console.error("Call failed:", callRes.data.error);
       }
@@ -134,7 +196,6 @@ export default function VoiceCall() {
 
   const handleEndCall = async () => {
     if (!callSid) return;
-
     try {
       await axios.post(
         `${process.env.NEXT_PUBLIC_API_BASE}/phone/hangup`,
@@ -149,6 +210,26 @@ export default function VoiceCall() {
       setCallActive(false);
       setCallSid(null);
 
+      // ✅ Stop Microphone Streaming
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach((track) => track.stop());
+        micStreamRef.current = null;
+      }
+
+      // ✅ Clean up audio processing
+      if (processorRef.current && mediaStreamSourceRef.current) {
+        processorRef.current.disconnect();
+        mediaStreamSourceRef.current.disconnect();
+      }
+
+      if (
+        audioContextRef.current &&
+        audioContextRef.current.state !== "closed"
+      ) {
+        audioContextRef.current.close();
+      }
+
+      // ✅ Disconnect WebSocket
       if (socket) {
         socket.disconnect();
         setSocket(null);
@@ -163,7 +244,6 @@ export default function VoiceCall() {
 
   const toggleMute = () => {
     setMuted((prev) => !prev);
-    if (audioRef.current) audioRef.current.muted = !audioRef.current.muted;
   };
 
   const toggleSpeaker = () => {
@@ -191,6 +271,7 @@ export default function VoiceCall() {
                       { code: "+86", label: "CN" },
                       { code: "+81", label: "JP" },
                       { code: "+49", label: "DE" },
+                      { code: "+60", label: "MY" }, // Malaysia
                       { code: "+33", label: "FR" },
                       { code: "+39", label: "IT" },
                       { code: "+34", label: "ES" },
@@ -232,7 +313,6 @@ export default function VoiceCall() {
                       { code: "+998", label: "UZ" }, // Uzbekistan
                       { code: "+84", label: "VN" }, // Vietnam
                       { code: "+967", label: "YE" }, // Yemen
-                      { code: "+60", label: "MY" }, // Malaysia
                     ].map(({ code, label }) => (
                       <SelectItem key={code} value={code}>
                         {label} {code}
