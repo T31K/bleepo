@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import axios from "axios";
+import { useAuth } from "@/context/AuthProvider";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -27,27 +29,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import io from "socket.io-client";
-import { useAuth } from "@/context/AuthProvider"; // Import auth context
-
-// Initialize WebSocket connection
-const socket = io(process.env.NEXT_PUBLIC_API_BASE);
-
-// Common country codes
-const countryCodes = [
-  { code: "+1", country: "United States" },
-  { code: "+44", country: "United Kingdom" },
-  { code: "+91", country: "India" },
-  { code: "+61", country: "Australia" },
-  { code: "+86", country: "China" },
-  { code: "+81", country: "Japan" },
-  { code: "+49", country: "Germany" },
-  { code: "+33", country: "France" },
-  { code: "+39", country: "Italy" },
-  { code: "+7", country: "Russia" },
-  { code: "+65", country: "Singapore" },
-  { code: "+60", country: "Malaysia" },
-  { code: "+62", country: "Indonesia" },
-].sort((a, b) => a.country.localeCompare(b.country));
 
 export default function VoiceCall() {
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -57,6 +38,7 @@ export default function VoiceCall() {
   const [speaker, setSpeaker] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const [callSid, setCallSid] = useState(null);
+  const [socket, setSocket] = useState(null);
   const audioRef = useRef(null);
   const { user, token } = useAuth();
 
@@ -74,17 +56,6 @@ export default function VoiceCall() {
       if (interval) clearInterval(interval);
     };
   }, [callActive]);
-
-  useEffect(() => {
-    // 🔊 Listen for live audio data from WebSocket
-    socket.on("audio", (audioData) => {
-      if (audioRef.current) {
-        audioRef.current.srcObject = audioData;
-      }
-    });
-
-    return () => socket.off("audio");
-  }, []);
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -120,31 +91,41 @@ export default function VoiceCall() {
         return;
       }
 
-      // ✅ Make the call
-      const callRes = await fetch(
+      // ✅ Make the call using Axios
+      const callRes = await axios.post(
         `${process.env.NEXT_PUBLIC_API_BASE}/phone/call`,
         {
-          method: "POST",
+          phoneNumber: `${countryCode}${phoneNumber}`,
+          userId: user.id,
+        },
+        {
           headers: {
-            "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({
-            phoneNumber: `${countryCode}${phoneNumber}`,
-            userId: user.id,
-          }),
         }
       );
 
-      const callData = await callRes.json();
-      if (callData.callSid) {
-        setCallSid(callData.callSid);
+      if (callRes.data.callSid) {
+        setCallSid(callRes.data.callSid);
         setCallActive(true);
+
+        // ✅ Connect WebSocket only when call starts
+        const newSocket = io(process.env.NEXT_PUBLIC_API_BASE);
+        newSocket.on("audio", (audioData) => {
+          if (audioRef.current) {
+            const audioBlob = new Blob([audioData], { type: "audio/wav" });
+            const audioUrl = URL.createObjectURL(audioBlob);
+            audioRef.current.src = audioUrl;
+            audioRef.current.play();
+          }
+        });
+
+        setSocket(newSocket);
       } else {
-        console.error("Call failed:", callData.error);
+        console.error("Call failed:", callRes.data.error);
       }
     } catch (error) {
-      console.error("❌ Call error:", error);
+      console.error("❌ Call error:", error.response?.data || error.message);
     }
   };
 
@@ -152,16 +133,29 @@ export default function VoiceCall() {
     if (!callSid) return;
 
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_BASE}/hangup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ callSid }),
-      });
+      await axios.post(
+        `${process.env.NEXT_PUBLIC_API_BASE}/phone/hangup`,
+        { callSid },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
 
       setCallActive(false);
       setCallSid(null);
+
+      // ✅ Disconnect WebSocket when call ends
+      if (socket) {
+        socket.disconnect();
+        setSocket(null);
+      }
     } catch (error) {
-      console.error("❌ Error ending call:", error);
+      console.error(
+        "❌ Error ending call:",
+        error.response?.data || error.message
+      );
     }
   };
 
@@ -174,7 +168,7 @@ export default function VoiceCall() {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center  p-4">
+    <div className="min-h-screen w-full flex items-center justify-center p-4">
       <Card className="w-full max-w-md shadow-lg">
         {!callActive ? (
           <>
@@ -185,9 +179,9 @@ export default function VoiceCall() {
                     <SelectValue placeholder="Select country" />
                   </SelectTrigger>
                   <SelectContent>
-                    {countryCodes.map((country) => (
-                      <SelectItem key={country.code} value={country.code}>
-                        {country.country} ({country.code})
+                    {["+1", "+44", "+91", "+61", "+86", "+81"].map((code) => (
+                      <SelectItem key={code} value={code}>
+                        {code}
                       </SelectItem>
                     ))}
                   </SelectContent>
