@@ -39,7 +39,7 @@ export default function VoiceCall() {
   const [callDuration, setCallDuration] = useState(0);
   const [callSid, setCallSid] = useState(null);
   const [socket, setSocket] = useState(null);
-  const audioRef = useRef(null);
+  const audioRef = useRef(new Audio()); // Hidden audio player
   const { user, token } = useAuth();
 
   useEffect(() => {
@@ -116,7 +116,7 @@ export default function VoiceCall() {
             const audioBlob = new Blob([audioData], { type: "audio/wav" });
             const audioUrl = URL.createObjectURL(audioBlob);
             audioRef.current.src = audioUrl;
-            audioRef.current.play();
+            audioRef.current.play(); // ✅ Automatically play
           }
         });
 
@@ -161,10 +161,12 @@ export default function VoiceCall() {
 
   const toggleMute = () => {
     setMuted((prev) => !prev);
+    audioRef.current.muted = !audioRef.current.muted;
   };
 
   const toggleSpeaker = () => {
     setSpeaker((prev) => !prev);
+    audioRef.current.volume = speaker ? 1.0 : 0.5; // Toggle speaker volume
   };
 
   return (
@@ -265,8 +267,6 @@ export default function VoiceCall() {
                   {formatTime(callDuration)}
                 </div>
               </div>
-
-              <audio ref={audioRef} controls autoPlay />
 
               <div className="grid grid-cols-3 gap-8 w-full mt-8">
                 <Button onClick={toggleMute}>
