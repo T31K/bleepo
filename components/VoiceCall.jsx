@@ -42,51 +42,77 @@ export default function VoiceCall() {
   const [deviceReady, setDeviceReady] = useState(false);
   const [tokenError, setTokenError] = useState(null);
 
-  const audioRef = useRef(new Audio());
+  const audioRef = useRef(typeof window !== "undefined" ? new Audio() : null);
   const { user, token } = useAuth();
 
   // Initialize Twilio Device
-
-  // Then modify your Twilio Device initialization in the useEffect:
   useEffect(() => {
     const setupDevice = async () => {
       try {
-        // Only run this code in the browser
-        if (typeof window !== "undefined") {
-          // Get token from server
-          const response = await axios.get(
-            `${process.env.NEXT_PUBLIC_API_BASE}/phone/token`,
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            }
-          );
-
-          console.log("Got Twilio token");
-
-          // Create Twilio Device only in the browser
-          const twilioDevice = new Device(response.data.token, {
-            debug: true,
-            audioConstraints: {
-              echoCancellation: true,
-              noiseSuppression: true,
+        // Get token from server
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_API_BASE}/phone/token`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
             },
-          });
+          }
+        );
 
-          // Rest of your code...
-        }
+        console.log("Got Twilio token");
+
+        // Create Twilio Device
+        const twilioDevice = new Device(response.data.token, {
+          // Optional debug flag
+          debug: true,
+          // Adjust audio constraints if needed
+          audioConstraints: {
+            echoCancellation: true,
+            noiseSuppression: true,
+          },
+        });
+
+        // Set up event handlers
+        twilioDevice.on("ready", () => {
+          console.log("✅ Twilio Device is ready");
+          setDeviceReady(true);
+        });
+
+        twilioDevice.on("error", (error) => {
+          console.error("❌ Twilio Device error:", error);
+          setTokenError(error.message);
+        });
+
+        twilioDevice.on("connect", (conn) => {
+          console.log("📞 Call connected", conn);
+          setConnection(conn);
+          setCallActive(true);
+          setCallSid(conn.parameters.CallSid);
+
+          // Set up call duration timer
+          setCallDuration(0);
+        });
+
+        twilioDevice.on("disconnect", () => {
+          console.log("📞 Call disconnected");
+          setConnection(null);
+          setCallActive(false);
+          setCallSid(null);
+        });
+
+        setDevice(twilioDevice);
       } catch (error) {
         console.error("Error setting up Twilio device:", error);
         setTokenError(error.message || "Failed to initialize Twilio device");
       }
     };
 
-    if (user && token && typeof window !== "undefined") {
+    if (user && token) {
       setupDevice();
     }
 
     return () => {
+      // Clean up Twilio device on component unmount
       if (device) {
         device.destroy();
       }
@@ -110,7 +136,9 @@ export default function VoiceCall() {
 
   // Initialize audio element
   useEffect(() => {
-    audioRef.current.autoplay = true;
+    if (audioRef.current) {
+      audioRef.current.autoplay = true;
+    }
 
     return () => {
       // Any other cleanup needed
