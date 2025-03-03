@@ -183,9 +183,59 @@ export default function VoiceCall() {
                     <SelectValue placeholder="Select country" />
                   </SelectTrigger>
                   <SelectContent>
-                    {["+1", "+44", "+91", "+61", "+86", "+81"].map((code) => (
+                    {[
+                      { code: "+1", label: "US" },
+                      { code: "+44", label: "UK" },
+                      { code: "+91", label: "IN" },
+                      { code: "+61", label: "AU" },
+                      { code: "+86", label: "CN" },
+                      { code: "+81", label: "JP" },
+                      { code: "+49", label: "DE" },
+                      { code: "+33", label: "FR" },
+                      { code: "+39", label: "IT" },
+                      { code: "+34", label: "ES" },
+                      { code: "+93", label: "AF" }, // Afghanistan
+                      { code: "+973", label: "BH" }, // Bahrain
+                      { code: "+880", label: "BD" }, // Bangladesh
+                      { code: "+975", label: "BT" }, // Bhutan
+                      { code: "+673", label: "BN" }, // Brunei
+                      { code: "+855", label: "KH" }, // Cambodia
+                      { code: "+86", label: "CN" }, // China
+                      { code: "+91", label: "IN" }, // India
+                      { code: "+62", label: "ID" }, // Indonesia
+                      { code: "+98", label: "IR" }, // Iran
+                      { code: "+964", label: "IQ" }, // Iraq
+                      { code: "+81", label: "JP" }, // Japan
+                      { code: "+962", label: "JO" }, // Jordan
+                      { code: "+7", label: "KZ" }, // Kazakhstan
+                      { code: "+965", label: "KW" }, // Kuwait
+                      { code: "+996", label: "KG" }, // Kyrgyzstan
+                      { code: "+856", label: "LA" }, // Laos
+                      { code: "+961", label: "LB" }, // Lebanon
+                      { code: "+960", label: "MV" }, // Maldives
+                      { code: "+976", label: "MN" }, // Mongolia
+                      { code: "+95", label: "MM" }, // Myanmar
+                      { code: "+977", label: "NP" }, // Nepal
+                      { code: "+968", label: "OM" }, // Oman
+                      { code: "+92", label: "PK" }, // Pakistan
+                      { code: "+970", label: "PS" }, // Palestine
+                      { code: "+63", label: "PH" }, // Philippines
+                      { code: "+974", label: "QA" }, // Qatar
+                      { code: "+82", label: "KR" }, // South Korea
+                      { code: "+94", label: "LK" }, // Sri Lanka
+                      { code: "+963", label: "SY" }, // Syria
+                      { code: "+886", label: "TW" }, // Taiwan
+                      { code: "+66", label: "TH" }, // Thailand
+                      { code: "+90", label: "TR" }, // Turkey
+                      { code: "+993", label: "TM" }, // Turkmenistan
+                      { code: "+971", label: "AE" }, // United Arab Emirates
+                      { code: "+998", label: "UZ" }, // Uzbekistan
+                      { code: "+84", label: "VN" }, // Vietnam
+                      { code: "+967", label: "YE" }, // Yemen
+                      { code: "+60", label: "MY" }, // Malaysia
+                    ].map(({ code, label }) => (
                       <SelectItem key={code} value={code}>
-                        {code}
+                        {label} {code}
                       </SelectItem>
                     ))}
                   </SelectContent>
