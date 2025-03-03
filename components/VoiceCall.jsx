@@ -27,7 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import io from "socket.io-client";
+import { Device } from "twilio-client";
 
 export default function VoiceCall() {
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -37,16 +37,89 @@ export default function VoiceCall() {
   const [speaker, setSpeaker] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const [callSid, setCallSid] = useState(null);
-  const [socket, setSocket] = useState(null);
+  const [device, setDevice] = useState(null);
+  const [connection, setConnection] = useState(null);
+  const [deviceReady, setDeviceReady] = useState(false);
+  const [tokenError, setTokenError] = useState(null);
 
-  const audioRef = useRef(null);
-  const audioContextRef = useRef(null);
-  const mediaStreamSourceRef = useRef(null);
-  const processorRef = useRef(null);
-  const micStreamRef = useRef(null);
-
+  const audioRef = useRef(new Audio());
   const { user, token } = useAuth();
 
+  // Initialize Twilio Device
+  useEffect(() => {
+    const setupDevice = async () => {
+      try {
+        // Get token from server
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_API_BASE}/phone/token`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        console.log("Got Twilio token");
+
+        // Create Twilio Device
+        const twilioDevice = new Device(response.data.token, {
+          // Optional debug flag
+          debug: true,
+          // Adjust audio constraints if needed
+          audioConstraints: {
+            echoCancellation: true,
+            noiseSuppression: true,
+          },
+        });
+
+        // Set up event handlers
+        twilioDevice.on("ready", () => {
+          console.log("✅ Twilio Device is ready");
+          setDeviceReady(true);
+        });
+
+        twilioDevice.on("error", (error) => {
+          console.error("❌ Twilio Device error:", error);
+          setTokenError(error.message);
+        });
+
+        twilioDevice.on("connect", (conn) => {
+          console.log("📞 Call connected", conn);
+          setConnection(conn);
+          setCallActive(true);
+          setCallSid(conn.parameters.CallSid);
+
+          // Set up call duration timer
+          setCallDuration(0);
+        });
+
+        twilioDevice.on("disconnect", () => {
+          console.log("📞 Call disconnected");
+          setConnection(null);
+          setCallActive(false);
+          setCallSid(null);
+        });
+
+        setDevice(twilioDevice);
+      } catch (error) {
+        console.error("Error setting up Twilio device:", error);
+        setTokenError(error.message || "Failed to initialize Twilio device");
+      }
+    };
+
+    if (user && token) {
+      setupDevice();
+    }
+
+    return () => {
+      // Clean up Twilio device on component unmount
+      if (device) {
+        device.destroy();
+      }
+    };
+  }, [user, token]);
+
+  // Call duration timer
   useEffect(() => {
     let interval = null;
     if (callActive) {
@@ -63,26 +136,10 @@ export default function VoiceCall() {
 
   // Initialize audio element
   useEffect(() => {
-    audioRef.current = new Audio();
     audioRef.current.autoplay = true;
 
     return () => {
-      // Cleanup audio processing
-      if (processorRef.current && mediaStreamSourceRef.current) {
-        processorRef.current.disconnect();
-        mediaStreamSourceRef.current.disconnect();
-      }
-
-      if (
-        audioContextRef.current &&
-        audioContextRef.current.state !== "closed"
-      ) {
-        audioContextRef.current.close();
-      }
-
-      if (micStreamRef.current) {
-        micStreamRef.current.getTracks().forEach((track) => track.stop());
-      }
+      // Any other cleanup needed
     };
   }, []);
 
@@ -97,6 +154,9 @@ export default function VoiceCall() {
   const handleNumberClick = (num) => {
     if (phoneNumber.length < 15 && !callActive) {
       setPhoneNumber((prev) => prev + num);
+    } else if (callActive && connection) {
+      // Send DTMF tones during an active call
+      connection.sendDigits(num);
     }
   };
 
@@ -105,171 +165,89 @@ export default function VoiceCall() {
   };
 
   const handleCall = async () => {
-    if (phoneNumber.length === 0) return;
+    if (!phoneNumber || phoneNumber.length === 0) return;
+
     try {
       if (!user || !token) {
         alert("You must be logged in to make a call.");
         return;
       }
+
       if (user.call_credits < 60) {
         alert("Not enough credits to start a call. Please top up.");
         return;
       }
 
-      // ✅ Request Microphone Permission Before Calling
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      micStreamRef.current = stream;
-      console.log("🎤 Microphone access granted");
+      if (!device || !deviceReady) {
+        alert("Twilio device is not ready. Please try again.");
+        return;
+      }
 
-      // ✅ Start Twilio call
-      const callRes = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_BASE}/phone/call`,
-        {
-          phoneNumber: `${countryCode}${phoneNumber}`,
+      console.log("📞 Making call to", `${countryCode}${phoneNumber}`);
+
+      // Make the call using Twilio Device
+      const conn = await device.connect({
+        params: {
+          To: `${countryCode}${phoneNumber}`,
           userId: user.id,
         },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+      });
 
-      if (callRes.data.callSid) {
-        setCallSid(callRes.data.callSid);
-        setCallActive(true);
+      setConnection(conn);
 
-        // ✅ Connect to WebSocket
-        const socketUrl = `${process.env.NEXT_PUBLIC_API_BASE}/stream`;
-        console.log(`Attempting to connect to WebSocket at: ${socketUrl}`);
-        const newSocket = io(socketUrl);
-
-        newSocket.on("connect", () => {
-          console.log("✅ Connected to stream socket");
-        });
-
-        newSocket.on("connect_error", (error) => {
-          console.error("❌ WebSocket connection error:", error);
-        });
-
-        newSocket.on("connect_timeout", () => {
-          console.error("⏱️ WebSocket connection timeout");
-        });
-
-        newSocket.on("audio", (audioData) => {
-          console.log(
-            "📢 Received audio data, length:",
-            audioData instanceof ArrayBuffer
-              ? audioData.byteLength
-              : Array.isArray(audioData)
-              ? audioData.length
-              : typeof audioData
-          );
-
-          const audioBlob = new Blob([new Float32Array(audioData).buffer], {
-            type: "audio/wav",
-          });
-          const audioUrl = URL.createObjectURL(audioBlob);
-
-          if (audioRef.current) {
-            audioRef.current.src = audioUrl;
-            audioRef.current
-              .play()
-              .catch((e) => console.error("Audio play error:", e));
-          }
-        });
-
-        // ✅ Set up Web Audio API for streaming
-        audioContextRef.current = new (window.AudioContext ||
-          window.webkitAudioContext)();
-        mediaStreamSourceRef.current =
-          audioContextRef.current.createMediaStreamSource(stream);
-
-        // Create a script processor node for real-time audio processing
-        processorRef.current = audioContextRef.current.createScriptProcessor(
-          2048,
-          1,
-          1
-        );
-        processorRef.current.onaudioprocess = (event) => {
-          if (!muted && callActive) {
-            const inputData = event.inputBuffer.getChannelData(0);
-            // Create a copy of the data to send
-            const dataToSend = new Float32Array(inputData);
-            newSocket.emit("audio-stream", Array.from(dataToSend));
-          }
-        };
-
-        mediaStreamSourceRef.current.connect(processorRef.current);
-        processorRef.current.connect(audioContextRef.current.destination);
-      } else {
-        console.error("Call failed:", callRes.data.error);
-      }
+      // Connection events are handled by the device event listeners
     } catch (error) {
-      console.error("❌ Call error:", error.response?.data || error.message);
+      console.error("❌ Call error:", error.message || "Failed to make call");
+      alert(`Call failed: ${error.message || "Unknown error"}`);
     }
   };
 
-  const handleEndCall = async () => {
-    if (!callSid) return;
-    try {
-      await axios.post(
-        `${process.env.NEXT_PUBLIC_API_BASE}/phone/hangup`,
-        { callSid },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      setCallActive(false);
-      setCallSid(null);
-
-      // ✅ Stop Microphone Streaming
-      if (micStreamRef.current) {
-        micStreamRef.current.getTracks().forEach((track) => track.stop());
-        micStreamRef.current = null;
-      }
-
-      // ✅ Clean up audio processing
-      if (processorRef.current && mediaStreamSourceRef.current) {
-        processorRef.current.disconnect();
-        mediaStreamSourceRef.current.disconnect();
-      }
-
-      if (
-        audioContextRef.current &&
-        audioContextRef.current.state !== "closed"
-      ) {
-        audioContextRef.current.close();
-      }
-
-      // ✅ Disconnect WebSocket
-      if (socket) {
-        socket.disconnect();
-        setSocket(null);
-      }
-    } catch (error) {
-      console.error(
-        "❌ Error ending call:",
-        error.response?.data || error.message
-      );
+  const handleEndCall = () => {
+    if (connection) {
+      connection.disconnect();
     }
+
+    if (device) {
+      device.disconnectAll();
+    }
+
+    // Clear call state
+    setConnection(null);
+    setCallActive(false);
+    setCallSid(null);
   };
 
   const toggleMute = () => {
     setMuted((prev) => !prev);
+
+    if (connection) {
+      if (!muted) {
+        connection.mute(true);
+      } else {
+        connection.mute(false);
+      }
+    }
   };
 
   const toggleSpeaker = () => {
     setSpeaker((prev) => !prev);
-    if (audioRef.current) audioRef.current.volume = speaker ? 1.0 : 0.5;
+
+    // Control volume
+    if (audioRef.current) {
+      audioRef.current.volume = speaker ? 1.0 : 0.5;
+    }
   };
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center p-4">
       <Card className="w-full max-w-md shadow-lg">
+        {tokenError && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+            <p>Error: {tokenError}</p>
+            <p className="text-sm">Try refreshing the page.</p>
+          </div>
+        )}
+
         {!callActive ? (
           <>
             <CardHeader className="text-center space-y-4">
@@ -355,6 +333,11 @@ export default function VoiceCall() {
                   </div>
                 </div>
               </div>
+              {!deviceReady && !tokenError && (
+                <div className="text-amber-600">
+                  Initializing Twilio Device...
+                </div>
+              )}
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-3 gap-4">
@@ -389,7 +372,7 @@ export default function VoiceCall() {
                 size="icon"
                 className="h-16 w-16 rounded-full bg-green-500 hover:bg-green-600"
                 onClick={handleCall}
-                disabled={phoneNumber.length === 0}
+                disabled={phoneNumber.length === 0 || !deviceReady}
               >
                 <Phone className="h-8 w-8" />
               </Button>
@@ -424,6 +407,32 @@ export default function VoiceCall() {
                 <Button onClick={toggleSpeaker}>
                   {speaker ? <Volume2 /> : <VolumeX />}
                 </Button>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4 w-full mt-4">
+                {[
+                  "1",
+                  "2",
+                  "3",
+                  "4",
+                  "5",
+                  "6",
+                  "7",
+                  "8",
+                  "9",
+                  "*",
+                  "0",
+                  "#",
+                ].map((num) => (
+                  <Button
+                    key={num}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleNumberClick(num)}
+                  >
+                    {num}
+                  </Button>
+                ))}
               </div>
             </div>
           </div>
