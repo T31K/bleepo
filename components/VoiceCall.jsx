@@ -27,7 +27,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Device } from "twilio-client";
+
+// We'll use dynamic imports for Twilio Device
+let Device;
 
 export default function VoiceCall() {
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -41,12 +43,46 @@ export default function VoiceCall() {
   const [connection, setConnection] = useState(null);
   const [deviceReady, setDeviceReady] = useState(false);
   const [tokenError, setTokenError] = useState(null);
+  const [isClient, setIsClient] = useState(false);
 
-  const audioRef = useRef(typeof window !== "undefined" ? new Audio() : null);
+  const audioRef = useRef(null);
   const { user, token } = useAuth();
+
+  // Check if we're in the browser
+  useEffect(() => {
+    setIsClient(true);
+
+    // Initialize audio element
+    audioRef.current = new Audio();
+    audioRef.current.autoplay = true;
+
+    // Dynamically import Twilio Device (only in browser)
+    const loadTwilioDevice = async () => {
+      try {
+        const twilioClient = await import("twilio-client");
+        Device = twilioClient.Device;
+      } catch (error) {
+        console.error("Error loading Twilio Device:", error);
+        setTokenError("Failed to load Twilio Client SDK");
+      }
+    };
+
+    loadTwilioDevice();
+
+    return () => {
+      // Cleanup
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = "";
+      }
+    };
+  }, []);
 
   // Initialize Twilio Device
   useEffect(() => {
+    // Only run this if we're in the browser and Device is loaded
+    if (!isClient || !Device || !user || !token) return;
+
     const setupDevice = async () => {
       try {
         // Get token from server
@@ -107,9 +143,7 @@ export default function VoiceCall() {
       }
     };
 
-    if (user && token) {
-      setupDevice();
-    }
+    setupDevice();
 
     return () => {
       // Clean up Twilio device on component unmount
@@ -117,7 +151,7 @@ export default function VoiceCall() {
         device.destroy();
       }
     };
-  }, [user, token]);
+  }, [isClient, user, token]);
 
   // Call duration timer
   useEffect(() => {
@@ -133,17 +167,6 @@ export default function VoiceCall() {
       if (interval) clearInterval(interval);
     };
   }, [callActive]);
-
-  // Initialize audio element
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.autoplay = true;
-    }
-
-    return () => {
-      // Any other cleanup needed
-    };
-  }, []);
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -239,6 +262,19 @@ export default function VoiceCall() {
       audioRef.current.volume = speaker ? 1.0 : 0.5;
     }
   };
+
+  // If not client-side yet, show loading state
+  if (!isClient) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center p-4">
+        <Card className="w-full max-w-md shadow-lg">
+          <CardContent className="p-8 text-center">
+            <p>Loading phone component...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center p-4">
