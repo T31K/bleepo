@@ -152,6 +152,10 @@ export default function VoiceCall() {
           console.error("❌ WebSocket connection error:", error);
         });
 
+        newSocket.on("connect_timeout", () => {
+          console.error("⏱️ WebSocket connection timeout");
+        });
+
         newSocket.on("audio", (audioData) => {
           console.log(
             "📢 Received audio data, length:",
@@ -162,15 +166,6 @@ export default function VoiceCall() {
               : typeof audioData
           );
 
-          // Your existing audio handling code...
-        });
-
-        newSocket.on("connect_timeout", () => {
-          console.error("⏱️ WebSocket connection timeout");
-        });
-
-        newSocket.on("audio", (audioData) => {
-          // Convert incoming audio data to an audio buffer
           const audioBlob = new Blob([new Float32Array(audioData).buffer], {
             type: "audio/wav",
           });
