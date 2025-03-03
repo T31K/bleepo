@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import {
   BadgeCheck,
   Bell,
@@ -26,15 +27,8 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
-export function NavUser({
-  user,
-}: {
-  user: {
-    name: string;
-    email: string;
-    avatar: string;
-  };
-}) {
+export const NavUser = (props) => {
+  const { user } = props;
   const { isMobile } = useSidebar();
 
   return (
@@ -91,4 +85,4 @@ export function NavUser({
       </SidebarMenuItem>
     </SidebarMenu>
   );
-}
+};

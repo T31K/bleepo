@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { useAuth } from "@/context/AuthProvider";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -15,34 +15,32 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useRouter } from "next/navigation";
 
-export function SignupForm({
-  className,
-  ...props
-}: React.ComponentPropsWithoutRef<"div">) {
-  const { register } = useAuth();
+export const LoginForm = (props) => {
+  const { className, ...rest } = props;
+  const { login } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
 
     try {
-      await register(email, password);
-      router.push("/"); // Redirect to homepage after signup
+      await login(email, password);
+      router.push("/"); // Redirect on success
     } catch (err) {
       setError(err.message);
     }
   };
 
   return (
-    <div className={cn("flex flex-col gap-6", className)} {...props}>
+    <div className={cn("flex flex-col gap-6", className)} {...rest}>
       <Card>
         <CardHeader className="text-center">
-          <CardTitle className="text-xl">Join Bleepo</CardTitle>
-          <CardDescription>Create an account to start calling</CardDescription>
+          <CardTitle className="text-xl">Welcome back to Bleepo</CardTitle>
+          <CardDescription>Login with your email to continue</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit}>
@@ -53,7 +51,7 @@ export function SignupForm({
                 <Input
                   id="email"
                   type="email"
-                  placeholder="m@example.com"
+                  placeholder="me@t31k.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
@@ -64,24 +62,25 @@ export function SignupForm({
                 <Input
                   id="password"
                   type="password"
+                  placeholder="Strong ass password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
                 />
               </div>
               <Button type="submit" className="w-full">
-                Sign Up
+                Login
               </Button>
             </div>
           </form>
         </CardContent>
       </Card>
       <div className="text-center text-sm">
-        {`Already have an account?`}
-        <a href="/login" className="underline underline-offset-4">
-          Login
+        {`Don't have an account?`}
+        <a href="/register" className="underline underline-offset-4">
+          Sign up
         </a>
       </div>
     </div>
   );
-}
+};

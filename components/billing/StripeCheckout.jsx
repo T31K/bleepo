@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,8 +20,8 @@ const packages = [
   { price: 20, minutes: 167 },
 ];
 
-export function StripeCheckout({ onClose }: { onClose: () => void }) {
-  const [selectedPackage, setSelectedPackage] = useState<number | null>(null);
+export function StripeCheckout({ onClose }) {
+  const [selectedPackage, setSelectedPackage] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const handleCheckout = async () => {

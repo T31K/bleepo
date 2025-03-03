@@ -1,3 +1,4 @@
+import React from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -8,7 +9,7 @@ import {
 } from "@/components/ui/card";
 import { SidebarInput } from "@/components/ui/sidebar";
 
-export function SidebarOptInForm() {
+export const SidebarOptInForm = () => {
   return (
     <Card className="shadow-none">
       <form>
@@ -30,4 +31,4 @@ export function SidebarOptInForm() {
       </form>
     </Card>
   );
-}
+};
