@@ -27,9 +27,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import io from "socket.io-client";
+import { useAuth } from "@/context/AuthProvider"; // Import auth context
 
 // Initialize WebSocket connection
-const socket = io("https://api.t31k.cloud");
+const socket = io(process.env.NEXT_PUBLIC_API_BASE);
 
 // Common country codes
 const countryCodes = [
@@ -57,6 +58,7 @@ export default function VoiceCall() {
   const [callDuration, setCallDuration] = useState(0);
   const [callSid, setCallSid] = useState(null);
   const audioRef = useRef(null);
+  const { user, token } = useAuth();
 
   useEffect(() => {
     let interval = null;
@@ -106,18 +108,40 @@ export default function VoiceCall() {
     if (phoneNumber.length === 0) return;
 
     try {
-      const response = await fetch("https://api.t31k.cloud/call", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phoneNumber: `${countryCode}${phoneNumber}` }),
-      });
+      // ✅ Check if user is authenticated
+      if (!user || !token) {
+        alert("You must be logged in to make a call.");
+        return;
+      }
 
-      const data = await response.json();
-      if (data.callSid) {
-        setCallSid(data.callSid);
+      // ✅ Check if user has enough credits
+      if (user.call_credits < 60) {
+        alert("Not enough credits to start a call. Please top up.");
+        return;
+      }
+
+      // ✅ Make the call
+      const callRes = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE}/phone/call`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            phoneNumber: `${countryCode}${phoneNumber}`,
+            userId: user.id,
+          }),
+        }
+      );
+
+      const callData = await callRes.json();
+      if (callData.callSid) {
+        setCallSid(callData.callSid);
         setCallActive(true);
       } else {
-        console.error("Call failed:", data.error);
+        console.error("Call failed:", callData.error);
       }
     } catch (error) {
       console.error("❌ Call error:", error);
@@ -128,7 +152,7 @@ export default function VoiceCall() {
     if (!callSid) return;
 
     try {
-      await fetch("https://api.t31k.cloud/hangup", {
+      await fetch(`${process.env.NEXT_PUBLIC_API_BASE}/hangup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ callSid }),
