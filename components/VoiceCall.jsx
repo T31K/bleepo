@@ -39,7 +39,7 @@ export default function VoiceCall() {
   const [callDuration, setCallDuration] = useState(0);
   const [callSid, setCallSid] = useState(null);
   const [socket, setSocket] = useState(null);
-  const audioRef = useRef(new Audio()); // Hidden audio player
+  const audioRef = useRef(null); // ✅ Initialize with useRef()
   const { user, token } = useAuth();
 
   useEffect(() => {
@@ -56,6 +56,13 @@ export default function VoiceCall() {
       if (interval) clearInterval(interval);
     };
   }, [callActive]);
+
+  useEffect(() => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio(); // ✅ Initialize only once
+      audioRef.current.autoplay = true;
+    }
+  }, []);
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -79,19 +86,16 @@ export default function VoiceCall() {
     if (phoneNumber.length === 0) return;
 
     try {
-      // ✅ Check if user is authenticated
       if (!user || !token) {
         alert("You must be logged in to make a call.");
         return;
       }
 
-      // ✅ Check if user has enough credits
       if (user.call_credits < 60) {
         alert("Not enough credits to start a call. Please top up.");
         return;
       }
 
-      // ✅ Make the call using Axios
       const callRes = await axios.post(
         `${process.env.NEXT_PUBLIC_API_BASE}/phone/call`,
         {
@@ -109,14 +113,13 @@ export default function VoiceCall() {
         setCallSid(callRes.data.callSid);
         setCallActive(true);
 
-        // ✅ Connect WebSocket only when call starts
         const newSocket = io(process.env.NEXT_PUBLIC_API_BASE);
         newSocket.on("audio", (audioData) => {
           if (audioRef.current) {
             const audioBlob = new Blob([audioData], { type: "audio/wav" });
             const audioUrl = URL.createObjectURL(audioBlob);
             audioRef.current.src = audioUrl;
-            audioRef.current.play(); // ✅ Automatically play
+            audioRef.current.play();
           }
         });
 
@@ -146,7 +149,6 @@ export default function VoiceCall() {
       setCallActive(false);
       setCallSid(null);
 
-      // ✅ Disconnect WebSocket when call ends
       if (socket) {
         socket.disconnect();
         setSocket(null);
@@ -161,12 +163,12 @@ export default function VoiceCall() {
 
   const toggleMute = () => {
     setMuted((prev) => !prev);
-    audioRef.current.muted = !audioRef.current.muted;
+    if (audioRef.current) audioRef.current.muted = !audioRef.current.muted;
   };
 
   const toggleSpeaker = () => {
     setSpeaker((prev) => !prev);
-    audioRef.current.volume = speaker ? 1.0 : 0.5; // Toggle speaker volume
+    if (audioRef.current) audioRef.current.volume = speaker ? 1.0 : 0.5;
   };
 
   return (
@@ -255,7 +257,6 @@ export default function VoiceCall() {
                   <UserRound className="h-20 w-20 text-primary" />
                 </AvatarFallback>
               </Avatar>
-
               <div className="text-center">
                 <h2 className="text-2xl font-bold mb-2">
                   {countryCode} {phoneNumber}
@@ -267,7 +268,6 @@ export default function VoiceCall() {
                   {formatTime(callDuration)}
                 </div>
               </div>
-
               <div className="grid grid-cols-3 gap-8 w-full mt-8">
                 <Button onClick={toggleMute}>
                   {muted ? <MicOff /> : <Mic />}
